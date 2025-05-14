@@ -15,7 +15,7 @@ namespace BlazorChat.Services
         private readonly ChatClient _chatClient;
         private readonly ILogger<ChatService> _logger;
         private readonly List<ChatMessage> _history;
-        private readonly WebSearchPlugin? _webSearchPlugin;
+        private readonly WebSearchTool? _webSearchPlugin;
 
         public ChatService(string? openAiApiKey = null, string? braveApiKey = null, ILogger<ChatService>? logger = null)
         {
@@ -36,7 +36,7 @@ namespace BlazorChat.Services
             // Add web search plugin if Brave API key is available
             if (!string.IsNullOrEmpty(braveApiKey))
             {
-                _webSearchPlugin = new WebSearchPlugin(braveApiKey);
+                _webSearchPlugin = new WebSearchTool(braveApiKey);
             }
         }
 
@@ -66,7 +66,7 @@ namespace BlazorChat.Services
             // Add web search tool if plugin is available
             if (_webSearchPlugin != null)
             {
-                options.Tools.Add(getWebSearchTool);
+                options.Tools.Add(_webSearchPlugin.AsTool);
             }
 
             bool requiresAction;
@@ -164,39 +164,6 @@ namespace BlazorChat.Services
         {
             _history.Clear();
         }
-
-
-        #region
-        private static string WebSearch(string query, int count = 5)
-        {
-            // Call the location API here.
-            return "San Francisco";
-        }
-
-        #endregion
-
-        #region
-        private static readonly ChatTool getWebSearchTool = ChatTool.CreateFunctionTool(
-            functionName: nameof(WebSearch),
-            functionDescription: "Search the web for the given query",
-            functionParameters: BinaryData.FromBytes("""
-                {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",   
-                            "description": "The search query to find information on the web"
-                        },
-                        "count": {
-                            "type": "integer",
-                            "description": "The number of results to return (default: 5)"
-                        }   
-                    },
-                    "required": [ "query" ]
-                }
-                """u8.ToArray())
-        );
-        #endregion
     }
 }
 

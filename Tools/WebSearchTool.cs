@@ -2,22 +2,44 @@ using System.ComponentModel;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OpenAI.Chat;
 
 namespace BlazorChat.Services;
 
-public class WebSearchPlugin
+public class WebSearchTool
 {
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
     private const string BraveSearchEndpoint = "https://api.search.brave.com/res/v1/web/search";
 
-    public WebSearchPlugin(string apiKey)
+    public WebSearchTool(string apiKey)
     {
         _apiKey = apiKey ?? throw new ArgumentNullException(nameof(apiKey));
         _httpClient = new HttpClient();
         _httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
         _httpClient.DefaultRequestHeaders.Add("X-Subscription-Token", _apiKey);
     }
+
+    public ChatTool AsTool => ChatTool.CreateFunctionTool(
+    functionName: "WebSearch",
+    functionDescription: "Search the web for the given query",
+    functionParameters: BinaryData.FromBytes("""
+                {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",   
+                            "description": "The search query to find information on the web"
+                        },
+                        "count": {
+                            "type": "integer",
+                            "description": "The number of results to return (default: 5)"
+                        }   
+                    },
+                    "required": [ "query" ]
+                }
+                """u8.ToArray())
+);
 
     public async Task<string> SearchWebAsync(string query, int count = 5)
     {
@@ -30,7 +52,7 @@ public class WebSearchPlugin
         {
             string url = $"{BraveSearchEndpoint}?q={Uri.EscapeDataString(query)}&count={count}";
             HttpResponseMessage response = await _httpClient.GetAsync(url);
-            
+
             if (!response.IsSuccessStatusCode)
             {
                 return $"Failed to search: {response.StatusCode} - {response.ReasonPhrase}";
@@ -47,7 +69,7 @@ public class WebSearchPlugin
             // Format the results
             var formattedResults = new System.Text.StringBuilder();
             formattedResults.AppendLine($"Search results for \"{query}\":\n");
-            
+
             foreach (var result in searchResult.Web.Results.Take(count))
             {
                 formattedResults.AppendLine($"Title: {result.Title}");
@@ -87,4 +109,4 @@ public class SearchResult
 
     [JsonPropertyName("description")]
     public string Description { get; set; } = string.Empty;
-} 
+}
