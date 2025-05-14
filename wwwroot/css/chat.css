@@ -88,8 +88,9 @@
 }
 
 .assistant-message {
-    background-color: var(--bg-color);
+    /* NEVER SET BACKGROUND COLOR FOR ASSISTANT MESSAGES */
     color: var(--text-color);
+    border-top-left-radius: 0;
 }
 
 .message-content {
@@ -144,26 +145,60 @@
     justify-content: center;
 }
 
+.send-button:hover:not(:disabled) {
+    color: var(--accent-color);
+}
+
 .send-button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }
 
-.send-button:hover:not(:disabled) {
-    color: var(--accent-color);
+/* Tool calls styling */
+.tool-calls-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    margin-bottom: 0.5rem;
 }
 
-/* Responsive styles */
-@media (max-width: 768px) {
-    .chat-container {
-        padding: 0 10px;
-    }
-    
-    .message {
-        max-width: 85%;
-    }
-    
-    .chat-input-container {
-        padding: 10px 0 16px 0;
-    }
-} 
+.tool-call {
+    display: flex;
+    align-items: center;
+    padding: 0.25rem 0.5rem;
+    border-radius: 1rem;
+    font-size: 0.8rem;
+    background-color: rgba(0, 0, 0, 0.2);
+    gap: 0.5rem;
+}
+
+.tool-call.invoked {
+    border: 1px solid #ffa500;
+}
+
+.tool-call.completed {
+    border: 1px solid #4caf50;
+}
+
+.tool-call-badge {
+    background-color: #333;
+    color: white;
+    padding: 0.15rem 0.4rem;
+    border-radius: 0.5rem;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+}
+
+.tool-call.invoked .tool-call-badge {
+    background-color: #ffa500;
+    color: black;
+}
+
+.tool-call.completed .tool-call-badge {
+    background-color: #4caf50;
+}
+
+.tool-call-name {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}

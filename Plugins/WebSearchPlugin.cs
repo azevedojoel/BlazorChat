@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Microsoft.SemanticKernel;
 
 namespace BlazorChat.Services;
 
@@ -20,11 +19,7 @@ public class WebSearchPlugin
         _httpClient.DefaultRequestHeaders.Add("X-Subscription-Token", _apiKey);
     }
 
-    [KernelFunction("search_web")]
-    [Description("Searches the web using Brave Search API for the given query")]
-    public async Task<string> SearchWebAsync(
-        [Description("The search query to find information on the web")] string query,
-        [Description("The number of results to return (default: 5)")] int count = 5)
+    public async Task<string> SearchWebAsync(string query, int count = 5)
     {
         if (string.IsNullOrEmpty(query))
         {

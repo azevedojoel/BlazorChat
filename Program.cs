@@ -1,12 +1,18 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using BlazorChat.Services;
+using Microsoft.Extensions.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
+builder.Services.AddLogging(logging =>
+{
+    logging.AddConsole();
+    logging.AddDebug();
+});
 
 // Register ChatService - read API key from configuration
 var openAiApiKey = builder.Configuration["OpenAI:ApiKey"] ?? 
@@ -14,7 +20,13 @@ var openAiApiKey = builder.Configuration["OpenAI:ApiKey"] ??
 var braveApiKey = builder.Configuration["Brave:ApiKey"] ?? 
                   Environment.GetEnvironmentVariable("BRAVE_API_KEY");
 
-builder.Services.AddSingleton(new ChatService(openAiApiKey, braveApiKey));
+builder.Services.AddSingleton(serviceProvider => 
+    new ChatService(
+        openAiApiKey, 
+        braveApiKey, 
+        serviceProvider.GetRequiredService<ILogger<ChatService>>()
+    )
+);
 
 var app = builder.Build();
 

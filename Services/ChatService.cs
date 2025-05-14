@@ -3,19 +3,21 @@ using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.SemanticKernel.Connectors.OpenAI;
+using OpenAI;
+using OpenAI.Chat;
+using System.Text.Json;
+using System.ClientModel;
 
 namespace BlazorChat.Services
 {
     public class ChatService
     {
-        private readonly Kernel _kernel;
-        private readonly IChatCompletionService _chatCompletionService;
-        private readonly ChatHistory _history;
+        private readonly ChatClient _chatClient;
+        private readonly ILogger<ChatService> _logger;
+        private readonly List<ChatMessage> _history;
+        private readonly WebSearchPlugin? _webSearchPlugin;
 
-        public ChatService(string? openAiApiKey = null, string? braveApiKey = null)
+        public ChatService(string? openAiApiKey = null, string? braveApiKey = null, ILogger<ChatService>? logger = null)
         {
             // Use provided keys or try to get from environment
             openAiApiKey ??= Environment.GetEnvironmentVariable("OPENAI_API_KEY");
@@ -24,73 +26,177 @@ namespace BlazorChat.Services
             if (string.IsNullOrEmpty(openAiApiKey))
                 throw new ArgumentNullException(nameof(openAiApiKey), "OpenAI API key is required");
 
-            // Create kernel builder with OpenAI
-            var builder = Kernel.CreateBuilder().AddOpenAIChatCompletion("gpt-4o-mini", openAiApiKey);
-
-            // Add logging
-            builder.Services.AddLogging(services => services.AddConsole().SetMinimumLevel(LogLevel.Trace));
-
-            // Build the kernel
-            _kernel = builder.Build();
-            _chatCompletionService = _kernel.GetRequiredService<IChatCompletionService>();
+            // Create OpenAI client
+            _chatClient = new ChatClient("gpt-4o-mini", openAiApiKey);
+            _logger = logger ?? LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<ChatService>();
+            
+            // Initialize chat history
+            _history = new List<ChatMessage>();
 
             // Add web search plugin if Brave API key is available
             if (!string.IsNullOrEmpty(braveApiKey))
             {
-                _kernel.Plugins.AddFromObject(new WebSearchPlugin(braveApiKey), "WebSearch");
+                _webSearchPlugin = new WebSearchPlugin(braveApiKey);
             }
-
-            // Initialize chat history
-            _history = new ChatHistory();
         }
 
-        public ChatHistory History => _history;
+        public IReadOnlyList<ChatMessage> History => _history.AsReadOnly();
 
         public void AddSystemMessage(string message)
         {
-            _history.AddSystemMessage(message);
+            _history.Add(new SystemChatMessage(message));
         }
 
         public void AddUserMessage(string message)
         {
-            _history.AddUserMessage(message);
+            _history.Add(new UserChatMessage(message));
         }
 
-        public async IAsyncEnumerable<string> GetStreamingCompletionAsync(string userMessage)
+        public async IAsyncEnumerable<StreamingChatCompletionUpdate> GetStreamingCompletionAsync(string userMessage)
         {
             // Add user message to history
-            _history.AddUserMessage(userMessage);
+            AddUserMessage(userMessage);
 
-            // Configure execution settings
-            var executionSettings = new OpenAIPromptExecutionSettings
+            // Create chat options
+            var options = new ChatCompletionOptions
             {
-                FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(),
-                Temperature = 0.87
+                Temperature = 0.87f
             };
 
-            // Get streaming response
-            var response = _chatCompletionService.GetStreamingChatMessageContentsAsync(
-                _history,
-                executionSettings: executionSettings,
-                kernel: _kernel);
-
-            var fullResponse = new StringBuilder();
-
-            await foreach (var chunk in response)
+            // Add web search tool if plugin is available
+            if (_webSearchPlugin != null)
             {
-                if (chunk.Content is null) continue;
-                fullResponse.Append(chunk.Content);
-                yield return chunk.Content;
+                options.Tools.Add(getWebSearchTool);
             }
 
-            // Add the complete response to history
-            _history.AddAssistantMessage(fullResponse.ToString());
+            bool requiresAction;
+
+            do
+            {
+                requiresAction = false;
+                StringBuilder contentBuilder = new();
+                var toolCallsBuilder = new StreamingChatToolCallsBuilder();
+
+
+                    // Get streaming response
+                    AsyncCollectionResult<StreamingChatCompletionUpdate> completionUpdates = 
+                        _chatClient.CompleteChatStreamingAsync(_history, options);
+
+                    await foreach (StreamingChatCompletionUpdate update in completionUpdates)
+                    {
+                        // Forward the update to the caller
+                        yield return update;
+
+                        // Accumulate the text content as new updates arrive
+                        foreach (ChatMessageContentPart contentPart in update.ContentUpdate)
+                        {
+                            contentBuilder.Append(contentPart.Text);
+                        }
+
+                        // Build the tool calls as new updates arrive
+                        foreach (StreamingChatToolCallUpdate toolCallUpdate in update.ToolCallUpdates)
+                        {
+                            toolCallsBuilder.Append(toolCallUpdate);
+                        }
+
+                        if (update.FinishReason == ChatFinishReason.ToolCalls)
+                        {
+                            // First, collect the accumulated function arguments into complete tool calls
+                            IReadOnlyList<ChatToolCall> toolCalls = toolCallsBuilder.Build();
+
+                            // Add the assistant message with tool calls to history
+                            AssistantChatMessage assistantMessage = new(toolCalls);
+                            if (contentBuilder.Length > 0)
+                            {
+                                assistantMessage.Content.Add(ChatMessageContentPart.CreateTextPart(contentBuilder.ToString()));
+                            }
+                            _history.Add(assistantMessage);
+
+                            // Process each tool call
+                            foreach (ChatToolCall toolCall in toolCalls)
+                            {
+                                if (toolCall.FunctionName == "WebSearch" && _webSearchPlugin != null)
+                                {
+                                    // Parse the arguments
+                                    string query = userMessage; // Default to user message
+                                    int count = 5; // Default count
+                                    
+                                    try
+                                    {
+                                        using JsonDocument argumentsJson = JsonDocument.Parse(toolCall.FunctionArguments);
+                                        if (argumentsJson.RootElement.TryGetProperty("query", out JsonElement queryElement))
+                                        {
+                                            query = queryElement.GetString() ?? userMessage;
+                                        }
+                                        
+                                        if (argumentsJson.RootElement.TryGetProperty("count", out JsonElement countElement))
+                                        {
+                                            count = countElement.GetInt32();
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogError(ex, "Error parsing tool arguments");
+                                    }
+
+                                    // Execute the web search
+                                    string searchResult = await _webSearchPlugin.SearchWebAsync(query, count);
+                                    
+                                    // Add tool message to history
+                                    _history.Add(new ToolChatMessage(toolCall.Id, searchResult));
+                                    
+                                    requiresAction = true;
+                                }
+                            }
+                        }
+                        else if (update.FinishReason == ChatFinishReason.Stop)
+                        {
+                            // Add the assistant message to history
+                            _history.Add(new AssistantChatMessage(contentBuilder.ToString()));
+                        }
+                    }
+
+                
+            } while (requiresAction);
         }
 
         public void ClearHistory()
         {
             _history.Clear();
         }
+
+
+        #region
+        private static string WebSearch(string query, int count = 5)
+        {
+            // Call the location API here.
+            return "San Francisco";
+        }
+
+        #endregion
+
+        #region
+        private static readonly ChatTool getWebSearchTool = ChatTool.CreateFunctionTool(
+            functionName: nameof(WebSearch),
+            functionDescription: "Search the web for the given query",
+            functionParameters: BinaryData.FromBytes("""
+                {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",   
+                            "description": "The search query to find information on the web"
+                        },
+                        "count": {
+                            "type": "integer",
+                            "description": "The number of results to return (default: 5)"
+                        }   
+                    },
+                    "required": [ "query" ]
+                }
+                """u8.ToArray())
+        );
+        #endregion
     }
 }
 
