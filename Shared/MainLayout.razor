@@ -1,0 +1,46 @@
+﻿@inherits LayoutComponentBase
+
+<PageTitle>BlazorChat</PageTitle>
+
+<div class="page">
+    <main class="main-content">
+        @Body
+    </main>
+</div>
+
+<style>
+    :root {
+        --bg-color: #343541;
+        --text-color: #ECECF1;
+        --secondary-bg: #444654;
+        --input-bg: #40414F;
+        --border-color: #565869;
+        --accent-color: #10A37F;
+        --error-color: #ef4146;
+    }
+
+    .page {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+    }
+
+    .main-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+    }
+
+    body {
+        font-family: 'Söhne', 'ui-sans-serif', 'system-ui', -apple-system, 'Segoe UI', Roboto, Ubuntu, Cantarell, 'Noto Sans', sans-serif;
+        line-height: 1.5;
+    }
+</style>

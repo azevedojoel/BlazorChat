@@ -1,0 +1,95 @@
+using System.ComponentModel;
+using System.Net.Http;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Microsoft.SemanticKernel;
+
+namespace BlazorChat.Services;
+
+public class WebSearchPlugin
+{
+    private readonly HttpClient _httpClient;
+    private readonly string _apiKey;
+    private const string BraveSearchEndpoint = "https://api.search.brave.com/res/v1/web/search";
+
+    public WebSearchPlugin(string apiKey)
+    {
+        _apiKey = apiKey ?? throw new ArgumentNullException(nameof(apiKey));
+        _httpClient = new HttpClient();
+        _httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
+        _httpClient.DefaultRequestHeaders.Add("X-Subscription-Token", _apiKey);
+    }
+
+    [KernelFunction("search_web")]
+    [Description("Searches the web using Brave Search API for the given query")]
+    public async Task<string> SearchWebAsync(
+        [Description("The search query to find information on the web")] string query,
+        [Description("The number of results to return (default: 5)")] int count = 5)
+    {
+        if (string.IsNullOrEmpty(query))
+        {
+            return "Search query cannot be empty.";
+        }
+
+        try
+        {
+            string url = $"{BraveSearchEndpoint}?q={Uri.EscapeDataString(query)}&count={count}";
+            HttpResponseMessage response = await _httpClient.GetAsync(url);
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                return $"Failed to search: {response.StatusCode} - {response.ReasonPhrase}";
+            }
+
+            string jsonResponse = await response.Content.ReadAsStringAsync();
+            var searchResult = JsonSerializer.Deserialize<BraveSearchResponse>(jsonResponse);
+
+            if (searchResult?.Web?.Results == null || !searchResult.Web.Results.Any())
+            {
+                return "No results found.";
+            }
+
+            // Format the results
+            var formattedResults = new System.Text.StringBuilder();
+            formattedResults.AppendLine($"Search results for \"{query}\":\n");
+            
+            foreach (var result in searchResult.Web.Results.Take(count))
+            {
+                formattedResults.AppendLine($"Title: {result.Title}");
+                formattedResults.AppendLine($"URL: {result.Url}");
+                formattedResults.AppendLine($"Description: {result.Description}");
+                formattedResults.AppendLine();
+            }
+
+            return formattedResults.ToString();
+        }
+        catch (Exception ex)
+        {
+            return $"Error during web search: {ex.Message}";
+        }
+    }
+}
+
+public class BraveSearchResponse
+{
+    [JsonPropertyName("web")]
+    public WebResults? Web { get; set; }
+}
+
+public class WebResults
+{
+    [JsonPropertyName("results")]
+    public List<SearchResult> Results { get; set; } = new();
+}
+
+public class SearchResult
+{
+    [JsonPropertyName("title")]
+    public string Title { get; set; } = string.Empty;
+
+    [JsonPropertyName("url")]
+    public string Url { get; set; } = string.Empty;
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = string.Empty;
+} 

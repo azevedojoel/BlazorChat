@@ -1,0 +1,152 @@
+@page "/chat"
+@using System.Collections.Generic
+@using System.Text
+@using BlazorChat.Services
+@inject ChatService ChatService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Chat</PageTitle>
+
+<div class="chat-container">
+    <div class="chat-header">
+        <h2>Blazor Chat</h2>
+    </div>
+    <hr class="header-divider" />
+    
+    <div class="chat-messages" id="messageContainer">
+        @foreach (var message in _messages)
+        {
+            <div class="message-row @(message.IsUser ? "user" : "assistant")">
+                <div class="message @(message.IsUser ? "user-message" : "assistant-message")">
+                    <div class="message-content">
+                        @((MarkupString)FormatMessage(message.Content))
+                    </div>
+                </div>
+            </div>
+        }
+        @if (_isStreaming)
+        {
+            <div class="message-row assistant">
+                <div class="message assistant-message">
+                    <div class="message-content">
+                        @((MarkupString)FormatMessage(_currentResponse))
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+    
+    <div class="chat-input-container">
+        <div class="chat-input">
+            <textarea 
+                @bind-value="_userInput" 
+                @bind-value:event="oninput"
+                @onkeydown="HandleKeyDown"
+                placeholder="Send a message..."
+                disabled="@_isStreaming"
+                id="chatInput"
+                rows="1"
+                class="input-field"></textarea>
+            <button @onclick="SendMessage" disabled="@(_isStreaming || string.IsNullOrWhiteSpace(_userInput))" class="send-button">
+                <i class="oi oi-arrow-top"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<ChatMessage> _messages = new();
+    private string _userInput = string.Empty;
+    private string _currentResponse = string.Empty;
+    private bool _isStreaming = false;
+
+    protected override void OnInitialized()
+    {
+        // Optional: Add a system message to set the tone
+        ChatService.AddSystemMessage("You are a helpful AI assistant.");
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(_userInput) || _isStreaming)
+            return;
+
+        var userMessage = new ChatMessage { Content = _userInput, IsUser = true };
+        _messages.Add(userMessage);
+        
+        var userMessageText = _userInput;
+        _userInput = string.Empty;
+        _currentResponse = string.Empty;
+        _isStreaming = true;
+        
+        StateHasChanged();
+        await JSRuntime.InvokeVoidAsync("scrollToBottom", "messageContainer");
+        
+        await foreach (var chunk in ChatService.GetStreamingCompletionAsync(userMessageText))
+        {
+            _currentResponse += chunk;
+            StateHasChanged();
+            await Task.Delay(1); // Give UI time to update
+        }
+        
+        _messages.Add(new ChatMessage { Content = _currentResponse, IsUser = false });
+        _currentResponse = string.Empty;
+        _isStreaming = false;
+        
+        StateHasChanged();
+        
+        // Scroll to bottom
+        await JSRuntime.InvokeVoidAsync("scrollToBottom", "messageContainer");
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            SendMessage();
+        }
+    }
+
+    private string FormatMessage(string message)
+    {
+        // Convert newlines to <br> tags for proper display
+        return message.Replace("\n", "<br>");
+    }
+    
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Add the auto-resize functionality for the input field
+            await JSRuntime.InvokeVoidAsync("eval", @"
+                const textarea = document.getElementById('chatInput');
+                textarea.addEventListener('input', function() {
+                    this.style.height = 'auto';
+                    this.style.height = (this.scrollHeight) + 'px';
+                    if (this.scrollHeight > 200) {
+                        this.style.overflowY = 'auto';
+                    } else {
+                        this.style.overflowY = 'hidden';
+                    }
+                });
+            ");
+            
+            await JSRuntime.InvokeVoidAsync("scrollToBottom", "messageContainer");
+        }
+    }
+
+    private void ClearChat()
+    {
+        _messages.Clear();
+        _currentResponse = string.Empty;
+        _isStreaming = false;
+        ChatService.ClearHistory();
+        StateHasChanged();
+    }
+
+    private class ChatMessage
+    {
+        public string Content { get; set; } = string.Empty;
+        public bool IsUser { get; set; }
+    }
+}
