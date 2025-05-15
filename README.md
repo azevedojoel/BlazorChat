@@ -2,7 +2,7 @@
 
 A modern Blazor Server application that demonstrates integration with OpenAI's API to create an interactive chat experience with real-time tool execution feedback.
 
-![Blazor Chat Screenshot](screenshot.jpg)
+![Blazor Chat Screenshot](screenshot.png)
 
 ## Features
 
