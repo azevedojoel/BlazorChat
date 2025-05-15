@@ -35,17 +35,6 @@ namespace BlazorChat.Services
             // Initialize chat history
             _history = new List<ChatMessage>();
 
-            _history.Add(new SystemChatMessage(@"
-You are a helpful assistant with access to real-time web search and document retrieval tools. When answering user questions, first use web_search to find relevant sources. Then, if the search results include potentially useful links, call fetch_url on the most relevant ones to extract detailed information before answering. Only answer after gathering enough supporting context.
-
-Prioritize:
-	•	Official documentation and reputable sources
-	•	Pages that match the user’s question closely
-	•	Fast and informative summaries
-
-Be concise and clear in your final answer. Use the tools independently and intelligently to support accurate, helpful responses.
-            "));
-
             // Add web search plugin if Brave API key is available
             if (!string.IsNullOrEmpty(braveApiKey))
             {

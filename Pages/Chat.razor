@@ -3,6 +3,8 @@
 @using System.Text
 @using BlazorChat.Services
 @using OpenAI.Chat
+@using Markdig
+@using Markdig.Extensions
 @inject ChatService ChatService
 @inject IJSRuntime JSRuntime
 
@@ -19,18 +21,21 @@
         {
             <div class="message-row @(message.IsUser ? "user" : "assistant")">
                 <div class="message @(message.IsUser ? "user-message" : "assistant-message")">
+                    @if (message.ToolCalls.Any())
+                    {
+                        <div class="tool-calls-container">
+                            @foreach (var toolCall in message.ToolCalls)
+                            {
+                                <div class="tool-call @toolCall.State.ToLower()">
+                                    <span class="tool-call-badge">@toolCall.State</span>
+                                    <span class="tool-call-name">@toolCall.Name</span>
+                                </div>
+                            }
+                        </div>
+                    }
                     <div class="message-content">
                         @((MarkupString)FormatMessage(message.Content))
                     </div>
-                </div>
-            </div>
-        }
-        @if (_activeTool != null)
-        {
-            <div class="tool-calls-container">
-                <div class="tool-call @_toolState.ToLower()">
-                    <span class="tool-call-badge">@_toolState</span>
-                    <span class="tool-call-name">@_activeTool</span>
                 </div>
             </div>
         }
@@ -38,10 +43,25 @@
         {
             <div class="message-row assistant">
                 <div class="message assistant-message">
+                    @if (_currentToolCalls.Any())
+                    {
+                        <div class="tool-calls-container">
+                            @foreach (var toolCall in _currentToolCalls)
+                            {
+                                <div class="tool-call @toolCall.State.ToLower()">
+                                    <span class="tool-call-badge">@toolCall.State</span>
+                                    <span class="tool-call-name">@toolCall.Name</span>
+                                </div>
+                            }
+                        </div>
+                    }
                     <div class="message-content">
                         @((MarkupString)FormatMessage(_currentResponse))
                     </div>
                 </div>
+            </div>
+            <div class="loading-container">
+                <img width="48" height="48" src="/daily_thread_logo.png" alt="Loading..." class="loading-spinner" />
             </div>
         }
     </div>
@@ -64,13 +84,25 @@
     private string _userInput = string.Empty;
     private string _currentResponse = string.Empty;
     private bool _isStreaming = false;
-    private string? _activeTool = null;
-    private string _toolState = "Calling";
-
+    private List<ToolCall> _currentToolCalls = new();
+    private MarkdownPipeline _pipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .DisableHtml()
+        .ConfigureNewLine("\n")
+        .Build();
     protected override void OnInitialized()
     {
         // Optional: Add a system message to set the tone
-        ChatService.AddSystemMessage("You are a helpful AI assistant.");
+        ChatService.AddSystemMessage(@"
+You are a helpful assistant with access to real-time web search and document retrieval tools. When answering user questions, first use web_search to find relevant sources. Then, if the search results include potentially useful links, call fetch_url on the most relevant ones to extract detailed information before answering. Only answer after gathering enough supporting context.
+
+Prioritize:
+	•	Official documentation and reputable sources
+	•	Pages that match the user's question closely
+	•	Fast and informative summaries
+
+Be concise and clear in your final answer. Use the tools independently and intelligently to support accurate, helpful responses.
+");
     }
 
     private async Task SendMessage()
@@ -84,8 +116,7 @@
         var userMessageText = _userInput;
         _userInput = string.Empty;
         _currentResponse = string.Empty;
-        _activeTool = null;
-        _toolState = "Calling";
+        _currentToolCalls.Clear();
         _isStreaming = true;
 
         StateHasChanged();
@@ -102,18 +133,27 @@
             // Process tool call updates
             foreach (var toolCallUpdate in update.ToolCallUpdates)
             {
-                if (_activeTool == null && toolCallUpdate.FunctionName != null
-                || _activeTool != toolCallUpdate.FunctionName)
+                if (toolCallUpdate.FunctionName == null)
+                    continue;
+
+                var existingToolCall = _currentToolCalls.FirstOrDefault(tc => tc.Name == toolCallUpdate.FunctionName);
+                if (existingToolCall == null)
                 {
-                    _activeTool = toolCallUpdate.FunctionName;
-                    _toolState = "Calling";
+                    _currentToolCalls.Add(new ToolCall { Name = toolCallUpdate.FunctionName, State = "Calling" });
+                }
+                else
+                {
+                    existingToolCall.State = "Processing";
                 }
             }
 
             // Handle finish reason
             if (update.FinishReason == ChatFinishReason.ToolCalls)
             {
-                _toolState = "Processing";
+                foreach (var toolCall in _currentToolCalls)
+                {
+                    toolCall.State = "Done";
+                }
             }
 
             StateHasChanged();
@@ -121,9 +161,13 @@
         }
 
         // After streaming completes
-        _messages.Add(new ChatMessage { Content = _currentResponse, IsUser = false });
+        var assistantMessage = new ChatMessage { 
+            Content = _currentResponse, 
+            IsUser = false, 
+            ToolCalls = new List<ToolCall>(_currentToolCalls) };
+        _messages.Add(assistantMessage);
         _currentResponse = string.Empty;
-        _activeTool = null;
+        _currentToolCalls.Clear();
         _isStreaming = false;
 
         StateHasChanged();
@@ -132,18 +176,25 @@
         await JSRuntime.InvokeVoidAsync("scrollToBottom", "messageContainer");
     }
 
-    private void HandleKeyDown(KeyboardEventArgs e)
+    private async Task HandleKeyDown(KeyboardEventArgs e)
     {
         if (e.Key == "Enter" && !e.ShiftKey)
         {
-            SendMessage();
+            await SendMessage();
         }
     }
 
     private string FormatMessage(string message)
     {
-        // Convert newlines to <br> tags for proper display
-        return message.Replace("\n", "<br>");
+        if (string.IsNullOrEmpty(message)) return string.Empty;
+        
+        // Format the markdown
+        var html = Markdown.ToHtml(message.TrimEnd(), _pipeline)
+            .TrimEnd('\n', '\r')  // Remove any trailing newlines
+            .Replace("<p>", "") // Remove paragraph tags which add extra spacing
+            .Replace("</p>", ""); // Remove closing p tags entirely instead of replacing with br
+            
+        return html;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -172,7 +223,7 @@ this.style.overflowY = 'hidden';
     {
         _messages.Clear();
         _currentResponse = string.Empty;
-        _activeTool = null;
+        _currentToolCalls.Clear();
         _isStreaming = false;
         ChatService.ClearHistory();
         StateHasChanged();
@@ -182,5 +233,12 @@ this.style.overflowY = 'hidden';
     {
         public string Content { get; set; } = string.Empty;
         public bool IsUser { get; set; }
+        public List<ToolCall> ToolCalls { get; set; } = new();
+    }
+
+    private class ToolCall
+    {
+        public string Name { get; set; } = string.Empty;
+        public string State { get; set; } = string.Empty;
     }
 }

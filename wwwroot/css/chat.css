@@ -57,6 +57,7 @@
     scroll-behavior: smooth;
     padding-bottom: 20px;
     width: 100%;
+    padding-right: 5px; /* Add padding for scrollbar */
 }
 
 /* Message styles */
@@ -75,10 +76,17 @@
 }
 
 .message {
-    max-width: 80%;
     padding: 10px 14px;
     border-radius: 18px;
     word-wrap: break-word;
+}
+
+.message-row.user .message {
+    max-width: 80%;
+}
+
+.message-row.assistant .message {
+    max-width: 100%;
 }
 
 .user-message {
@@ -97,6 +105,47 @@
     word-break: break-word;
     overflow-wrap: break-word;
     white-space: pre-wrap;
+}
+
+/* Fix for markdown lists */
+.message-content ul, 
+.message-content ol {
+    padding-left: 1rem;
+    margin: 0.25rem 0;
+}
+
+.message-content li {
+    margin-bottom: 0.1rem;
+}
+
+/* Fix for excessive spacing in lists and paragraphs */
+.message-content li p {
+    margin: 0;
+}
+
+.message-content p {
+    margin-top: 0;
+    margin-bottom: 0.5em;
+}
+
+.message-content p:last-child {
+    margin-bottom: 0;
+}
+
+/* Fix spacing in headings */
+.message-content h1, 
+.message-content h2, 
+.message-content h3,
+.message-content h4, 
+.message-content h5, 
+.message-content h6 {
+    margin-top: 0.7em;
+    margin-bottom: 0.5em;
+}
+
+/* Fix spacing between list items */
+.message-content li + li {
+    margin-top: 0.2em;
 }
 
 /* Input area styles */

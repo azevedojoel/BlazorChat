@@ -1,12 +1,12 @@
 @import url('open-iconic/font/css/open-iconic-bootstrap.min.css');
 
 :root {
-    --bg-color: #343541;
-    --text-color: #ECECF1;
-    --secondary-bg: #444654;
-    --input-bg: #40414F;
-    --border-color: #565869;
-    --accent-color: #10A37F;
+    --bg-color: #1e1e1e;
+    --text-color: #d1d1d1;
+    --secondary-bg: #2d2d2d;
+    --input-bg: #252525;
+    --border-color: #404040;
+    --accent-color: #0f9d7a;
     --error-color: #ef4146;
 }
 
@@ -87,4 +87,24 @@ pre {
     right: 0.75rem;
     top: 0.5rem;
     color: white;
+}
+
+.loading-spinner {
+    width: 48px;
+    height: 48px;
+    display: block;
+    margin: 10px 0 10px 10px;
+    animation: pulse 1.5s infinite ease-in-out;
+}
+
+.loading-container {
+    display: flex;
+    justify-content: flex-start;
+    width: 100%;
+}
+
+@keyframes pulse {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
 }
