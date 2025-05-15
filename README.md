@@ -2,7 +2,7 @@
 
 A modern Blazor Server application that demonstrates integration with OpenAI's API to create an interactive chat experience with real-time tool execution feedback.
 
-![Blazor Chat Screenshot](screenshot.png)
+![Blazor Chat Screenshot](screenshot.jpg)
 
 ## Features
 
@@ -33,8 +33,8 @@ A modern Blazor Server application that demonstrates integration with OpenAI's A
 
 1. Clone the repository
    ```
-   git clone https://github.com/yourusername/blazor-chat.git
-   cd blazor-chat
+   git clone https://github.com/azevedojoel/BlazorChat.git
+   cd BlazorChat
    ```
 
 2. Set your API keys
