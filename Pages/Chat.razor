@@ -156,7 +156,8 @@ responses.
                     continue;
 
                 var existingToolCall = _currentToolCalls
-                .FirstOrDefault(tc => tc.Name == toolCallUpdate.FunctionName);
+                    .FirstOrDefault(tc => tc.Name == toolCallUpdate.FunctionName);
+
                 if (existingToolCall == null)
                 {
                     _currentToolCalls.Add(new ToolCall { Name = toolCallUpdate.FunctionName, State = "Calling" });
