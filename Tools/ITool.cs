@@ -7,6 +7,8 @@ namespace BlazorChat.Tools
     public interface ITool
     {
         ChatTool AsTool { get; }
+        string Icon { get; }
+        string DisplayName { get; }
         Task<string> ExecuteAsync(string toolCallId, BinaryData arguments);
     }
 } 

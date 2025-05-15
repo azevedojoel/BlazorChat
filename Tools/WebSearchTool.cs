@@ -20,6 +20,10 @@ public class WebSearchTool : ITool
         _httpClient.DefaultRequestHeaders.Add("X-Subscription-Token", _apiKey);
     }
 
+    public string Icon => "fas fa-globe";
+    
+    public string DisplayName => "Web Search";
+
     public ChatTool AsTool => ChatTool.CreateFunctionTool(
     functionName: "WebSearch",
     functionDescription: "Search the web for the given query",

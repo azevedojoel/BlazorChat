@@ -19,6 +19,10 @@ namespace BlazorChat.Tools
             _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0");
         }
 
+        public string Icon => "fas fa-globe";
+        
+        public string DisplayName => "Fetch URL";
+
         public ChatTool AsTool => ChatTool.CreateFunctionTool(
             functionName: "FetchUrls",
             functionDescription: "Fetch and parse HTML content from a given URL",

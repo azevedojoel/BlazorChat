@@ -6,13 +6,14 @@
 @using Markdig.Extensions
 @using Microsoft.JSInterop
 @inject ChatService ChatService
+@inject ToolRegistry ToolRegistry
 @inject IJSRuntime JSRuntime
 
 <PageTitle>Chat</PageTitle>
 
 <div class="chat-container">
     <div class="chat-header">
-        <h2>Blazor Chat</h2>
+        <h2>Blazor Chat (w/ OpenAI + Tools)</h2>
     </div>
     <hr class="header-divider" />
 
@@ -26,9 +27,9 @@
                         <div class="tool-calls-container">
                             @foreach (var toolCall in message.ToolCalls)
                             {
-                                <div class="tool-call @toolCall.State.ToLower()">
-                                    <span class="tool-call-badge">@toolCall.State</span>
-                                    <span class="tool-call-name">@toolCall.Name</span>
+                                <div class="tool-call">
+                                    <i class="@ToolRegistry.GetIcon(toolCall.Name)"></i>
+                                    <span class="tool-call-name">@toolCall.DisplayName</span>
                                 </div>
                             }
                         </div>
@@ -48,9 +49,9 @@
                         <div class="tool-calls-container">
                             @foreach (var toolCall in _currentToolCalls)
                             {
-                                <div class="tool-call @toolCall.State.ToLower()">
-                                    <span class="tool-call-badge">@toolCall.State</span>
-                                    <span class="tool-call-name">@toolCall.Name</span>
+                                <div class="tool-call @(toolCall.State == "Processing" ? "processing" : "") shimmer">
+                                    <i class="@ToolRegistry.GetIcon(toolCall.Name)"></i>
+                                    <span class="tool-call-name">@toolCall.DisplayName</span>
                                 </div>
                             }
                         </div>
@@ -60,17 +61,13 @@
                     </div>
                 </div>
             </div>
-            <div class="loading-container">
-                <img width="48" height="48" src="/daily_thread_logo.png" alt="Loading..." class="loading-spinner" />
-            </div>
         }
-    </div>
-
+    </div>    
     <div class="chat-input-container">
         <div class="chat-input">
             <textarea @bind-value="_userInput" @bind-value:event="oninput" @onkeydown="HandleKeyDown"
-                placeholder="Send a message..." disabled="@_isStreaming" id="chatInput" rows="1"
-                class="input-field" @ref="_textAreaRef"></textarea>
+                placeholder="Send a message..." disabled="@_isStreaming" id="chatInput" rows="1" class="input-field"
+                @ref="_textAreaRef"></textarea>
             <button @onclick="SendMessage" disabled="@(_isStreaming || string.IsNullOrWhiteSpace(_userInput))"
                 class="send-button">
                 <i class="fas fa-arrow-up"></i>
@@ -91,7 +88,7 @@
     .DisableHtml()
     .ConfigureNewLine("\n")
     .Build();
-    
+
     protected override void OnInitialized()
     {
         // Optional: Add a system message to set the tone
@@ -156,11 +153,16 @@ responses.
                     continue;
 
                 var existingToolCall = _currentToolCalls
-                    .FirstOrDefault(tc => tc.Name == toolCallUpdate.FunctionName);
+                .FirstOrDefault(tc => tc.Name == toolCallUpdate.FunctionName);
 
                 if (existingToolCall == null)
                 {
-                    _currentToolCalls.Add(new ToolCall { Name = toolCallUpdate.FunctionName, State = "Calling" });
+                    _currentToolCalls.Add(new ToolCall
+                    {
+                        Name = toolCallUpdate.FunctionName,
+                        DisplayName = ToolRegistry.GetDisplayName(toolCallUpdate.FunctionName),
+                        State = "Calling"
+                    });
                 }
                 else
                 {
@@ -242,6 +244,7 @@ responses.
     private class ToolCall
     {
         public string Name { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
         public string State { get; set; } = string.Empty;
     }
 }
