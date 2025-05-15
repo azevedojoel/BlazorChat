@@ -1,6 +1,7 @@
 @page "/chat"
 @using System.Collections.Generic
 @using BlazorChat.Services
+@using BlazorChat.Tools
 @using OpenAI.Chat
 @using Markdig
 @using Markdig.Extensions
@@ -92,10 +93,10 @@
     protected override void OnInitialized()
     {
         // Optional: Add a system message to set the tone
-        ChatService.AddSystemMessage(@"
+        ChatService.AddSystemMessage($@"
 You are a helpful assistant with access to real-time web search and document retrieval tools. When answering user
-questions, first use web_search to find relevant sources. Then, if the search results include potentially useful links,
-call fetch_url on the most relevant ones to extract detailed information before answering. Only answer after gathering
+questions, first use @{WebSearchTool.Name} to find relevant sources. Then, if the search results include potentially useful links,
+call @{FetchUrlsTool.Name} on the most relevant ones to extract detailed information before answering. Only answer after gathering
 enough supporting context.
 
 Prioritize:

@@ -24,9 +24,13 @@ public class WebSearchTool : ITool
     
     public string DisplayName => "Web Search";
 
+    public static string Name => "WebSearch";
+
+    public string Description => "Search the web for the given query";
+
     public ChatTool AsTool => ChatTool.CreateFunctionTool(
-    functionName: "WebSearch",
-    functionDescription: "Search the web for the given query",
+    functionName: Name,
+    functionDescription: Description,
     functionParameters: BinaryData.FromBytes("""
                 {
                     "type": "object",

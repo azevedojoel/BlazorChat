@@ -21,11 +21,15 @@ namespace BlazorChat.Tools
 
         public string Icon => "fas fa-globe";
         
-        public string DisplayName => "Fetch URL";
+        public string DisplayName => "Fetch URL Content";
+
+        public static string Name => "FetchUrls";
+
+        public string Description => "Fetch and parse HTML content from a given URL";
 
         public ChatTool AsTool => ChatTool.CreateFunctionTool(
-            functionName: "FetchUrls",
-            functionDescription: "Fetch and parse HTML content from a given URL",
+            functionName: Name,
+            functionDescription: Description,
             functionParameters: BinaryData.FromBytes("""
                 {
                     "type": "object",
