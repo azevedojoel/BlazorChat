@@ -6,7 +6,7 @@ using OpenAI.Chat;
 
 namespace BlazorChat.Tools;
 
-public class WebSearchTool
+public class WebSearchTool : ITool
 {
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
@@ -39,7 +39,39 @@ public class WebSearchTool
                     "required": [ "query" ]
                 }
                 """u8.ToArray())
-);
+    );
+
+    public async Task<string> ExecuteAsync(string toolCallId, BinaryData arguments)
+    {
+        // Parse the arguments
+        string query = string.Empty;
+        int count = 5; // Default count
+        
+        try
+        {
+            using JsonDocument argumentsJson = JsonDocument.Parse(arguments);
+            if (argumentsJson.RootElement.TryGetProperty("query", out JsonElement queryElement))
+            {
+                query = queryElement.GetString() ?? string.Empty;
+            }
+            
+            if (argumentsJson.RootElement.TryGetProperty("count", out JsonElement countElement))
+            {
+                count = countElement.GetInt32();
+            }
+        }
+        catch (Exception ex)
+        {
+            return $"Error parsing tool arguments: {ex.Message}";
+        }
+
+        if (string.IsNullOrEmpty(query))
+        {
+            return "Search query cannot be empty.";
+        }
+
+        return await SearchWebAsync(query, count);
+    }
 
     public async Task<string> SearchWebAsync(string query, int count = 5)
     {

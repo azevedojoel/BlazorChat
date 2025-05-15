@@ -1,13 +1,14 @@
 using System;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using HtmlAgilityPack;
 using OpenAI.Chat;
 
 namespace BlazorChat.Tools
 {
-    public class FetchUrlsTool
+    public class FetchUrlsTool : ITool
     {
         private readonly HttpClient _httpClient;
         private const int MAX_CONTENT_LENGTH = 50000; // Limit content to ~50K characters
@@ -34,6 +35,32 @@ namespace BlazorChat.Tools
                 }
                 """u8.ToArray())
         );
+
+        public async Task<string> ExecuteAsync(string toolCallId, BinaryData arguments)
+        {
+            // Parse the arguments
+            string url = string.Empty;
+            
+            try
+            {
+                using JsonDocument argumentsJson = JsonDocument.Parse(arguments);
+                if (argumentsJson.RootElement.TryGetProperty("url", out JsonElement urlElement))
+                {
+                    url = urlElement.GetString() ?? string.Empty;
+                }
+            }
+            catch (Exception ex)
+            {
+                return $"Error parsing tool arguments: {ex.Message}";
+            }
+
+            if (string.IsNullOrEmpty(url))
+            {
+                return "URL cannot be empty.";
+            }
+
+            return await FetchAndParseHtmlAsync(url);
+        }
 
         public async Task<string> FetchAndParseHtmlAsync(string url)
         {

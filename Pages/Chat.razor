@@ -1,10 +1,10 @@
 @page "/chat"
 @using System.Collections.Generic
-@using System.Text
 @using BlazorChat.Services
 @using OpenAI.Chat
 @using Markdig
 @using Markdig.Extensions
+@using Microsoft.JSInterop
 @inject ChatService ChatService
 @inject IJSRuntime JSRuntime
 
@@ -70,10 +70,10 @@
         <div class="chat-input">
             <textarea @bind-value="_userInput" @bind-value:event="oninput" @onkeydown="HandleKeyDown"
                 placeholder="Send a message..." disabled="@_isStreaming" id="chatInput" rows="1"
-                class="input-field"></textarea>
+                class="input-field" @ref="_textAreaRef"></textarea>
             <button @onclick="SendMessage" disabled="@(_isStreaming || string.IsNullOrWhiteSpace(_userInput))"
                 class="send-button">
-                <i class="oi oi-arrow-top"></i>
+                <i class="fas fa-arrow-up"></i>
             </button>
         </div>
     </div>
@@ -85,24 +85,43 @@
     private string _currentResponse = string.Empty;
     private bool _isStreaming = false;
     private List<ToolCall> _currentToolCalls = new();
+    private ElementReference _textAreaRef;
     private MarkdownPipeline _pipeline = new MarkdownPipelineBuilder()
-        .UseAdvancedExtensions()
-        .DisableHtml()
-        .ConfigureNewLine("\n")
-        .Build();
+    .UseAdvancedExtensions()
+    .DisableHtml()
+    .ConfigureNewLine("\n")
+    .Build();
+    
     protected override void OnInitialized()
     {
         // Optional: Add a system message to set the tone
         ChatService.AddSystemMessage(@"
-You are a helpful assistant with access to real-time web search and document retrieval tools. When answering user questions, first use web_search to find relevant sources. Then, if the search results include potentially useful links, call fetch_url on the most relevant ones to extract detailed information before answering. Only answer after gathering enough supporting context.
+You are a helpful assistant with access to real-time web search and document retrieval tools. When answering user
+questions, first use web_search to find relevant sources. Then, if the search results include potentially useful links,
+call fetch_url on the most relevant ones to extract detailed information before answering. Only answer after gathering
+enough supporting context.
 
 Prioritize:
-	•	Official documentation and reputable sources
-	•	Pages that match the user's question closely
-	•	Fast and informative summaries
+• Official documentation and reputable sources
+• Pages that match the user's question closely
+• Fast and informative summaries
 
-Be concise and clear in your final answer. Use the tools independently and intelligently to support accurate, helpful responses.
+Be concise and clear in your final answer. Use the tools independently and intelligently to support accurate, helpful
+responses.
 ");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await AutoResizeTextArea();
+        }
+    }
+
+    private async Task AutoResizeTextArea()
+    {
+        await JSRuntime.InvokeVoidAsync("autoResizeTextArea", _textAreaRef);
     }
 
     private async Task SendMessage()
@@ -120,7 +139,7 @@ Be concise and clear in your final answer. Use the tools independently and intel
         _isStreaming = true;
 
         StateHasChanged();
-        await JSRuntime.InvokeVoidAsync("scrollToBottom", "messageContainer");
+        await AutoResizeTextArea(); // Reset textarea height after clearing
 
         await foreach (var update in ChatService.GetStreamingCompletionAsync(userMessageText))
         {
@@ -136,7 +155,8 @@ Be concise and clear in your final answer. Use the tools independently and intel
                 if (toolCallUpdate.FunctionName == null)
                     continue;
 
-                var existingToolCall = _currentToolCalls.FirstOrDefault(tc => tc.Name == toolCallUpdate.FunctionName);
+                var existingToolCall = _currentToolCalls
+                .FirstOrDefault(tc => tc.Name == toolCallUpdate.FunctionName);
                 if (existingToolCall == null)
                 {
                     _currentToolCalls.Add(new ToolCall { Name = toolCallUpdate.FunctionName, State = "Calling" });
@@ -161,19 +181,18 @@ Be concise and clear in your final answer. Use the tools independently and intel
         }
 
         // After streaming completes
-        var assistantMessage = new ChatMessage { 
-            Content = _currentResponse, 
-            IsUser = false, 
-            ToolCalls = new List<ToolCall>(_currentToolCalls) };
+        var assistantMessage = new ChatMessage
+        {
+            Content = _currentResponse,
+            IsUser = false,
+            ToolCalls = new List<ToolCall>(_currentToolCalls)
+        };
         _messages.Add(assistantMessage);
         _currentResponse = string.Empty;
         _currentToolCalls.Clear();
         _isStreaming = false;
 
         StateHasChanged();
-
-        // Scroll to bottom
-        await JSRuntime.InvokeVoidAsync("scrollToBottom", "messageContainer");
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
@@ -182,41 +201,24 @@ Be concise and clear in your final answer. Use the tools independently and intel
         {
             await SendMessage();
         }
+        else
+        {
+            await Task.Delay(10); // Small delay to let the input update
+            await AutoResizeTextArea();
+        }
     }
 
     private string FormatMessage(string message)
     {
         if (string.IsNullOrEmpty(message)) return string.Empty;
-        
+
         // Format the markdown
         var html = Markdown.ToHtml(message.TrimEnd(), _pipeline)
-            .TrimEnd('\n', '\r')  // Remove any trailing newlines
-            .Replace("<p>", "") // Remove paragraph tags which add extra spacing
-            .Replace("</p>", ""); // Remove closing p tags entirely instead of replacing with br
-            
+        .TrimEnd('\n', '\r') // Remove any trailing newlines
+        .Replace("<p>", "") // Remove paragraph tags which add extra spacing
+        .Replace("</p>", ""); // Remove closing p tags entirely instead of replacing with br
+
         return html;
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            // Add the auto-resize functionality for the input field
-            await JSRuntime.InvokeVoidAsync("eval", @"
-const textarea = document.getElementById('chatInput');
-textarea.addEventListener('input', function() {
-this.style.height = 'auto';
-this.style.height = (this.scrollHeight) + 'px';
-if (this.scrollHeight > 200) {
-this.style.overflowY = 'auto';
-} else {
-this.style.overflowY = 'hidden';
-}
-});
-");
-
-            await JSRuntime.InvokeVoidAsync("scrollToBottom", "messageContainer");
-        }
     }
 
     private void ClearChat()

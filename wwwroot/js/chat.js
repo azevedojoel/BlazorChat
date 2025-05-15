@@ -6,21 +6,17 @@ function scrollToBottom(elementId) {
     }
 }
 
-// Function to auto-resize textarea as user types
-function autoResizeTextarea(elementId) {
-    var textarea = document.getElementById(elementId);
-    if (textarea) {
-        textarea.style.height = 'auto';
-        textarea.style.height = (textarea.scrollHeight) + 'px';
-        
-        // Handle overflow based on height
-        if (textarea.scrollHeight > 200) {
-            textarea.style.overflowY = 'auto';
-        } else {
-            textarea.style.overflowY = 'hidden';
-        }
-    }
-}
+// Auto-resize textarea function
+window.autoResizeTextArea = function (textAreaElement) {
+    if (!textAreaElement) return;
+    
+    // Reset height to auto to get the correct scrollHeight
+    textAreaElement.style.height = 'auto';
+    
+    // Set the height to match content (with a small buffer)
+    const newHeight = Math.min(textAreaElement.scrollHeight, 200); // Max height of 200px
+    textAreaElement.style.height = newHeight + 'px';
+};
 
 // Initialize chat UI functionality
 document.addEventListener('DOMContentLoaded', function() {
@@ -31,10 +27,17 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Setup autosize for the textarea
         chatInput.addEventListener('input', function() {
-            autoResizeTextarea('chatInput');
+            window.autoResizeTextArea(chatInput);
         });
     }
     
     // Scroll to bottom on initial load
     scrollToBottom('messageContainer');
+
+    // Add an input event listener to auto-resize as user types
+    document.body.addEventListener('input', function(e) {
+        if (e.target.tagName.toLowerCase() === 'textarea' && e.target.classList.contains('input-field')) {
+            window.autoResizeTextArea(e.target);
+        }
+    });
 }); 

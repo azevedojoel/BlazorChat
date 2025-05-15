@@ -16,8 +16,7 @@ namespace BlazorChat.Services
         private readonly ChatClient _chatClient;
         private readonly ILogger<ChatService> _logger;
         private readonly List<ChatMessage> _history;
-        private readonly WebSearchTool? _webSearchPlugin;
-        private readonly FetchUrlsTool? _fetchUrlsPlugin;
+        private readonly List<ITool> _tools = new();
 
         public ChatService(string? openAiApiKey = null, string? braveApiKey = null, ILogger<ChatService>? logger = null)
         {
@@ -38,10 +37,10 @@ namespace BlazorChat.Services
             // Add web search plugin if Brave API key is available
             if (!string.IsNullOrEmpty(braveApiKey))
             {
-                _webSearchPlugin = new WebSearchTool(braveApiKey);
+                _tools.Add(new WebSearchTool(braveApiKey));
             }
 
-            _fetchUrlsPlugin = new FetchUrlsTool();
+            _tools.Add(new FetchUrlsTool());
         }
 
         public IReadOnlyList<ChatMessage> History => _history.AsReadOnly();
@@ -67,15 +66,10 @@ namespace BlazorChat.Services
                 Temperature = 0.87f
             };
 
-            // Add web search tool if plugin is available
-            if (_webSearchPlugin != null)
+            // Add tools to the options
+            foreach (var tool in _tools)
             {
-                options.Tools.Add(_webSearchPlugin.AsTool);
-            }
-
-            if (_fetchUrlsPlugin != null)
-            {
-                options.Tools.Add(_fetchUrlsPlugin.AsTool);
+                options.Tools.Add(tool.AsTool);
             }
 
             bool requiresAction;
@@ -87,114 +81,77 @@ namespace BlazorChat.Services
                 var toolCallsBuilder = new StreamingChatToolCallsBuilder();
 
 
-                    // Get streaming response
-                    AsyncCollectionResult<StreamingChatCompletionUpdate> completionUpdates = 
-                        _chatClient.CompleteChatStreamingAsync(_history, options);
+                // Get streaming response
+                AsyncCollectionResult<StreamingChatCompletionUpdate> completionUpdates = 
+                    _chatClient.CompleteChatStreamingAsync(_history, options);
 
-                    await foreach (StreamingChatCompletionUpdate update in completionUpdates)
+                await foreach (StreamingChatCompletionUpdate update in completionUpdates)
+                {
+                    // Forward the update to the caller
+                    yield return update;
+
+                    // Accumulate the text content as new updates arrive
+                    foreach (ChatMessageContentPart contentPart in update.ContentUpdate)
                     {
-                        // Forward the update to the caller
-                        yield return update;
-
-                        // Accumulate the text content as new updates arrive
-                        foreach (ChatMessageContentPart contentPart in update.ContentUpdate)
-                        {
-                            contentBuilder.Append(contentPart.Text);
-                        }
-
-                        // Build the tool calls as new updates arrive
-                        foreach (StreamingChatToolCallUpdate toolCallUpdate in update.ToolCallUpdates)
-                        {
-                            toolCallsBuilder.Append(toolCallUpdate);
-                        }
-
-                        if (update.FinishReason == ChatFinishReason.ToolCalls)
-                        {
-                            // First, collect the accumulated function arguments into complete tool calls
-                            IReadOnlyList<ChatToolCall> toolCalls = toolCallsBuilder.Build();
-
-                            // Add the assistant message with tool calls to history
-                            AssistantChatMessage assistantMessage = new(toolCalls);
-                            if (contentBuilder.Length > 0)
-                            {
-                                assistantMessage.Content.Add(ChatMessageContentPart.CreateTextPart(contentBuilder.ToString()));
-                            }
-                            _history.Add(assistantMessage);
-
-                            // Process each tool call
-                            foreach (ChatToolCall toolCall in toolCalls)
-                            {
-
-                                if (toolCall.FunctionName == "FetchUrls" && _fetchUrlsPlugin != null)
-                                {
-                                    // Parse the arguments
-                                    string url = userMessage; // Default to user message
-                                    
-                                    try
-                                    {
-                                        using JsonDocument argumentsJson = JsonDocument.Parse(toolCall.FunctionArguments);
-                                        if (argumentsJson.RootElement.TryGetProperty("url", out JsonElement urlElement))
-                                        {
-                                            url = urlElement.GetString() ?? userMessage;
-                                        }
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        _logger.LogError(ex, "Error parsing tool arguments");
-                                    }
-
-                                    // Execute the URL fetch
-                                    string fetchResult = await _fetchUrlsPlugin.FetchAndParseHtmlAsync(url);
-                                    
-                                    // Add tool message to history
-                                    _history.Add(new ToolChatMessage(toolCall.Id, fetchResult));
-                                    
-                                    requiresAction = true;
-                                }
-
-
-                                if (toolCall.FunctionName == "WebSearch" && _webSearchPlugin != null)
-                                {
-                                    // Parse the arguments
-                                    string query = userMessage; // Default to user message
-                                    int count = 5; // Default count
-                                    
-                                    try
-                                    {
-                                        using JsonDocument argumentsJson = JsonDocument.Parse(toolCall.FunctionArguments);
-                                        if (argumentsJson.RootElement.TryGetProperty("query", out JsonElement queryElement))
-                                        {
-                                            query = queryElement.GetString() ?? userMessage;
-                                        }
-                                        
-                                        if (argumentsJson.RootElement.TryGetProperty("count", out JsonElement countElement))
-                                        {
-                                            count = countElement.GetInt32();
-                                        }
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        _logger.LogError(ex, "Error parsing tool arguments");
-                                    }
-
-                                    // Execute the web search
-                                    string searchResult = await _webSearchPlugin.SearchWebAsync(query, count);
-                                    
-                                    // Add tool message to history
-                                    _history.Add(new ToolChatMessage(toolCall.Id, searchResult));
-                                    
-                                    requiresAction = true;
-                                }
-                            }
-                        }
-                        else if (update.FinishReason == ChatFinishReason.Stop)
-                        {
-                            // Add the assistant message to history
-                            _history.Add(new AssistantChatMessage(contentBuilder.ToString()));
-                        }
+                        contentBuilder.Append(contentPart.Text);
                     }
 
-                
+                    // Build the tool calls as new updates arrive
+                    foreach (StreamingChatToolCallUpdate toolCallUpdate in update.ToolCallUpdates)
+                    {
+                        toolCallsBuilder.Append(toolCallUpdate);
+                    }
+
+                    if (update.FinishReason == ChatFinishReason.ToolCalls)
+                    {
+                        // First, collect the accumulated function arguments into complete tool calls
+                        IReadOnlyList<ChatToolCall> toolCalls = toolCallsBuilder.Build();
+
+                        // Add the assistant message with tool calls to history
+                        AssistantChatMessage assistantMessage = new(toolCalls);
+                        if (contentBuilder.Length > 0)
+                        {
+                            assistantMessage.Content.Add(ChatMessageContentPart.CreateTextPart(contentBuilder.ToString()));
+                        }
+                        _history.Add(assistantMessage);
+
+                        // Process each tool call
+                        foreach (ChatToolCall toolCall in toolCalls)
+                        {
+                            // Find the tool that can handle this call
+                            ITool? matchingTool = _tools.FirstOrDefault(t => 
+                                t.AsTool.FunctionName == toolCall.FunctionName);
+
+                            if (matchingTool != null)
+                            {
+                                try
+                                {
+                                    // Execute the tool with its arguments
+                                    string toolResult = await matchingTool.ExecuteAsync(
+                                        toolCall.Id, 
+                                        toolCall.FunctionArguments);
+
+                                    // Add tool message to history
+                                    _history.Add(new ToolChatMessage(toolCall.Id, toolResult));
+                                    
+                                    requiresAction = true;
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogError(ex, $"Error executing tool {toolCall.FunctionName}");
+                                    _history.Add(new ToolChatMessage(toolCall.Id, 
+                                        $"Error executing tool: {ex.Message}"));
+                                    requiresAction = true;
+                                }
+                            }
+                        }
+                    }
+                    else if (update.FinishReason == ChatFinishReason.Stop)
+                    {
+                        // Add the assistant message to history
+                        _history.Add(new AssistantChatMessage(contentBuilder.ToString()));
+                    }
+                }
             } while (requiresAction);
         }
 
