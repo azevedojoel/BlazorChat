@@ -30,7 +30,7 @@
             <div class="tool-calls-container">
                 <div class="tool-call @_toolState.ToLower()">
                     <span class="tool-call-badge">@_toolState</span>
-                    <span class="tool-call-name">WebSearch.@_activeTool</span>
+                    <span class="tool-call-name">@_activeTool</span>
                 </div>
             </div>
         }
@@ -102,7 +102,7 @@
             // Process tool call updates
             foreach (var toolCallUpdate in update.ToolCallUpdates)
             {
-                if (_activeTool == null && toolCallUpdate.FunctionName == "WebSearch")
+                if (_activeTool == null)
                 {
                     _activeTool = toolCallUpdate.FunctionName;
                     _toolState = "Calling";

@@ -7,6 +7,7 @@ using OpenAI;
 using OpenAI.Chat;
 using System.Text.Json;
 using System.ClientModel;
+using BlazorChat.Tools;
 
 namespace BlazorChat.Services
 {
@@ -16,6 +17,7 @@ namespace BlazorChat.Services
         private readonly ILogger<ChatService> _logger;
         private readonly List<ChatMessage> _history;
         private readonly WebSearchTool? _webSearchPlugin;
+        private readonly FetchUrlsTool? _fetchUrlsPlugin;
 
         public ChatService(string? openAiApiKey = null, string? braveApiKey = null, ILogger<ChatService>? logger = null)
         {
@@ -33,11 +35,24 @@ namespace BlazorChat.Services
             // Initialize chat history
             _history = new List<ChatMessage>();
 
+            _history.Add(new SystemChatMessage(@"
+You are a helpful assistant with access to real-time web search and document retrieval tools. When answering user questions, first use web_search to find relevant sources. Then, if the search results include potentially useful links, call fetch_url on the most relevant ones to extract detailed information before answering. Only answer after gathering enough supporting context.
+
+Prioritize:
+	•	Official documentation and reputable sources
+	•	Pages that match the user’s question closely
+	•	Fast and informative summaries
+
+Be concise and clear in your final answer. Use the tools independently and intelligently to support accurate, helpful responses.
+            "));
+
             // Add web search plugin if Brave API key is available
             if (!string.IsNullOrEmpty(braveApiKey))
             {
                 _webSearchPlugin = new WebSearchTool(braveApiKey);
             }
+
+            _fetchUrlsPlugin = new FetchUrlsTool();
         }
 
         public IReadOnlyList<ChatMessage> History => _history.AsReadOnly();
@@ -67,6 +82,11 @@ namespace BlazorChat.Services
             if (_webSearchPlugin != null)
             {
                 options.Tools.Add(_webSearchPlugin.AsTool);
+            }
+
+            if (_fetchUrlsPlugin != null)
+            {
+                options.Tools.Add(_fetchUrlsPlugin.AsTool);
             }
 
             bool requiresAction;
@@ -115,6 +135,35 @@ namespace BlazorChat.Services
                             // Process each tool call
                             foreach (ChatToolCall toolCall in toolCalls)
                             {
+
+                                if (toolCall.FunctionName == "FetchUrls" && _fetchUrlsPlugin != null)
+                                {
+                                    // Parse the arguments
+                                    string url = userMessage; // Default to user message
+                                    
+                                    try
+                                    {
+                                        using JsonDocument argumentsJson = JsonDocument.Parse(toolCall.FunctionArguments);
+                                        if (argumentsJson.RootElement.TryGetProperty("url", out JsonElement urlElement))
+                                        {
+                                            url = urlElement.GetString() ?? userMessage;
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogError(ex, "Error parsing tool arguments");
+                                    }
+
+                                    // Execute the URL fetch
+                                    string fetchResult = await _fetchUrlsPlugin.FetchAndParseHtmlAsync(url);
+                                    
+                                    // Add tool message to history
+                                    _history.Add(new ToolChatMessage(toolCall.Id, fetchResult));
+                                    
+                                    requiresAction = true;
+                                }
+
+
                                 if (toolCall.FunctionName == "WebSearch" && _webSearchPlugin != null)
                                 {
                                     // Parse the arguments
