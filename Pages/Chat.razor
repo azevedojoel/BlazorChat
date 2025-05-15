@@ -102,7 +102,8 @@
             // Process tool call updates
             foreach (var toolCallUpdate in update.ToolCallUpdates)
             {
-                if (_activeTool == null)
+                if (_activeTool == null && toolCallUpdate.FunctionName != null
+                || _activeTool != toolCallUpdate.FunctionName)
                 {
                     _activeTool = toolCallUpdate.FunctionName;
                     _toolState = "Calling";
